@@ -1005,6 +1005,33 @@ var Heartland;
         }
         Card.typeByNumber = typeByNumber;
         /**
+         * Heartland.Card.typeByTrack
+         *
+         * @param {string} data - track data
+         * @param {boolean} isEncrypted - (default: false)
+         * @param {string} trackNumber
+         *
+         * @returns CardType
+         */
+        function typeByTrack(data, isEncrypted, trackNumber) {
+            if (isEncrypted === void 0) { isEncrypted = false; }
+            var number;
+            if (isEncrypted && trackNumber && trackNumber === '02') {
+                number = data.split('=')[0];
+            }
+            else {
+                var temp = data.split('%');
+                if (temp[1]) {
+                    temp = temp[1].split('^');
+                    if (temp[0]) {
+                        number = temp[0].toString().substr(1);
+                    }
+                }
+            }
+            return typeByNumber(number);
+        }
+        Card.typeByTrack = typeByTrack;
+        /**
          * Heartland.Card.luhnCheck
          *
          * Runs a mod 10 check on a given card number.
@@ -1566,11 +1593,27 @@ var Heartland;
          *
          * Parses a credit card number to obtain the card type/brand.
          *
-         * @param {string} number
+         * @param {string} tokenizationType
+         * @param {Heartland.Options} options
          */
-        function getCardType(number) {
-            var cardType = Heartland.Card.typeByNumber(number);
-            var type = '';
+        function getCardType(tokenizationType, options) {
+            var cardType;
+            var data = '';
+            var type = 'unknown';
+            switch (tokenizationType) {
+                case 'swipe':
+                    data = options.track;
+                    cardType = Heartland.Card.typeByTrack(data);
+                    break;
+                case 'encrypted':
+                    data = options.track;
+                    cardType = Heartland.Card.typeByTrack(data, true, options.trackNumber);
+                    break;
+                default:
+                    data = options.cardNumber;
+                    cardType = Heartland.Card.typeByNumber(data);
+                    break;
+            }
             if (cardType) {
                 type = cardType.code;
             }
@@ -1715,7 +1758,7 @@ var Heartland;
                     window.event.returnValue = false;
                 }
                 var fields = Heartland.Util.getFields(options.formId);
-                var cardType = Heartland.Util.getCardType(fields.number);
+                var cardType = Heartland.Util.getCardType(fields.number, 'pan');
                 options.cardNumber = fields.number;
                 options.cardExpMonth = fields.expMonth;
                 options.cardExpYear = fields.expYear;
@@ -1783,15 +1826,15 @@ var Heartland;
          * @param {Heartland.Options} options
          */
         function call(type, options) {
-            var number = options.cardNumber.replace(/^\s+|\s+$/g, '');
-            var lastfour = number.slice(-4);
-            var cardType = Heartland.Util.getCardType(number);
+            var cardType = Heartland.Util.getCardType(type, options);
             var params = Heartland.Util.getParams(type, options);
             jsonp(options.gatewayUrl + params, function (data) {
                 if (data.error) {
                     Heartland.Util.throwError(options, data);
                 }
                 else {
+                    var card = data.card || data.encryptedcard;
+                    var lastfour = card.number.slice(-4);
                     data.last_four = lastfour;
                     data.card_type = cardType;
                     data.exp_month = options.cardExpMonth;
